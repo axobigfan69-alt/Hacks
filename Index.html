@@ -1,0 +1,350 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080808">
+<title>Luau Lab</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #080808;
+  --panel: #141414;
+  --line: #333;
+  --text: #fff;
+  --muted: #aaa;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px system-ui, sans-serif;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+h1 { font-size: 23px; margin: 0; }
+button, input, textarea { font: inherit; }
+button {
+  color: white;
+  background: #191919;
+  border: 1px solid #444;
+  padding: 10px 13px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+button:hover { background: #292929; }
+.logo-button {
+  width: 54px;
+  height: 54px;
+  padding: 3px;
+  border-radius: 50%;
+  background: #000;
+}
+.logo-button img { width: 100%; height: 100%; }
+main { max-width: 900px; margin: 28px auto; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  margin-top: 18px;
+}
+label { display: block; margin: 14px 0 7px; }
+input, textarea {
+  width: 100%;
+  color: white;
+  background: #090909;
+  border: 1px solid #393939;
+  border-radius: 8px;
+  padding: 12px;
+}
+textarea {
+  min-height: 270px;
+  resize: vertical;
+  font: 13px/1.6 monospace;
+  tab-size: 2;
+}
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 110px; }
+.muted { color: var(--muted); font-size: 12px; }
+#status { min-height: 20px; color: #ddd; }
+#savedList { display: grid; gap: 8px; }
+.saved {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px; border: 1px solid #333;
+  border-radius: 8px; overflow-wrap: anywhere;
+}
+.saved span { flex: 1; }
+#quickPanel {
+  position: fixed; inset: 0; z-index: 5;
+  display: grid; place-items: center;
+  padding: 18px; background: #000b;
+}
+#quickPanel[hidden] { display: none; }
+.panel {
+  width: min(100%, 360px); padding: 18px;
+  background: #111; border: 1px solid #444;
+  border-radius: 14px;
+}
+.panel button { width: 100%; margin-top: 9px; }
+@media (min-width: 700px) {
+  body { padding: 28px; }
+  .card { padding: 24px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Luau Lab</h1>
+    <div class="muted">Black & white script workspace</div>
+  </div>
+  <button class="logo-button" id="openPanel" aria-label="Open quick panel">
+    <!-- Replace assets/app-logo.png with your logo image -->
+    <img src="assets/app-logo.png" alt="Luau Lab logo">
+  </button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Experience search</h2>
+    <div class="row">
+      <input id="gameName" placeholder="Enter Roblox game name">
+      <button id="searchGame">Search Roblox</button>
+    </div>
+    <p class="muted">Search opens Roblox's public experience results.</p>
+  </section>
+
+  <section class="card">
+    <h2>Luau editor</h2>
+    <label for="scriptName">Script name</label>
+    <input id="scriptName" value="MyScript">
+
+    <label for="editor">Code</label>
+    <textarea id="editor" spellcheck="false"
+      autocapitalize="off" autocomplete="off"
+      placeholder="-- Write your Luau script here"></textarea>
+    <p class="muted" id="counter">0 characters</p>
+
+    <div class="row">
+      <button id="save">Save script</button>
+      <button id="export">Export .lua</button>
+      <button id="check">Basic check</button>
+    </div>
+    <p id="status" role="status">Ready.</p>
+  </section>
+
+  <section class="card">
+    <h2>Saved scripts</h2>
+    <div id="savedList" class="muted">No saved scripts yet.</div>
+  </section>
+</main>
+
+<div id="quickPanel" hidden>
+  <div class="panel">
+    <h2>Quick panel</h2>
+    <p class="muted">Your separate floating-logo menu.</p>
+    <button id="goEditor">Open editor</button>
+    <button id="goSearch">Search experiences</button>
+    <button id="closePanel">Close</button>
+    <p class="muted">
+      This editor does not inject scripts into Roblox.
+      Use exported scripts in your own Roblox Studio project.
+    </p>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+const editor = $("editor");
+const status = $("status");
+const STORAGE = "luau-lab-saved-v1";
+
+function notify(message) {
+  status.textContent = message;
+}
+
+function cleanName(name) {
+  return (name.trim() || "MyScript")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 64);
+}
+
+function getSaved() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function updateCounter() {
+  $("counter").textContent =
+    editor.value.length.toLocaleString() + " characters";
+}
+
+function renderSaved() {
+  const list = $("savedList");
+  list.replaceChildren();
+  const items = getSaved();
+
+  if (!items.length) {
+    list.textContent = "No saved scripts yet.";
+    list.className = "muted";
+    return;
+  }
+
+  list.className = "";
+  items.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "saved";
+
+    const title = document.createElement("span");
+    title.textContent = item.name;
+
+    const load = document.createElement("button");
+    load.textContent = "Load";
+    load.onclick = () => {
+      $("scriptName").value = item.name;
+      editor.value = item.code;
+      updateCounter();
+      notify("Loaded " + item.name);
+    };
+
+    const remove = document.createElement("button");
+    remove.textContent = "Delete";
+    remove.onclick = () => {
+      const next = getSaved();
+      next.splice(index, 1);
+      localStorage.setItem(STORAGE, JSON.stringify(next));
+      renderSaved();
+      notify("Deleted script.");
+    };
+
+    row.append(title, load, remove);
+    list.append(row);
+  });
+}
+
+$("save").onclick = () => {
+  const name = cleanName($("scriptName").value);
+  const items = getSaved();
+  const entry = {
+    name,
+    code: editor.value,
+    updatedAt: new Date().toISOString()
+  };
+  const existing = items.findIndex(
+    item => item.name.toLowerCase() === name.toLowerCase()
+  );
+
+  if (existing >= 0) items[existing] = entry;
+  else items.unshift(entry);
+
+  try {
+    localStorage.setItem(STORAGE, JSON.stringify(items));
+    $("scriptName").value = name;
+    renderSaved();
+    notify("Saved on this device.");
+  } catch {
+    notify("Storage unavailable. Export your script instead.");
+  }
+};
+
+$("export").onclick = () => {
+  const blob = new Blob([editor.value], {
+    type: "text/plain;charset=utf-8"
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = cleanName($("scriptName").value) + ".lua";
+  link.click();
+  URL.revokeObjectURL(url);
+  notify("Exported .lua file.");
+};
+
+$("check").onclick = () => {
+  const code = editor.value;
+  if (!code.trim()) {
+    notify("Write some code first.");
+    return;
+  }
+
+  const pairs = [["(", ")"], ["[", "]"], ["{", "}"]];
+  const problems = [];
+
+  for (const [open, close] of pairs) {
+    let depth = 0;
+    for (const char of code) {
+      if (char === open) depth++;
+      if (char === close) depth--;
+      if (depth < 0) {
+        problems.push("Unexpected " + close);
+        break;
+      }
+    }
+    if (depth > 0) problems.push("Missing " + close);
+  }
+
+  notify(problems.length
+    ? "Basic check: " + problems.join(", ")
+    : "Bracket check passed. This does not fully validate Luau.");
+};
+
+function searchRoblox() {
+  const name = $("gameName").value.trim();
+  if (!name) {
+    notify("Enter a game name first.");
+    return;
+  }
+  window.open(
+    "https://www.roblox.com/search/experiences?keyword=" +
+      encodeURIComponent(name),
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+$("searchGame").onclick = searchRoblox;
+$("gameName").addEventListener("keydown", event => {
+  if (event.key === "Enter") searchRoblox();
+});
+editor.addEventListener("input", updateCounter);
+
+$("openPanel").onclick = () => $("quickPanel").hidden = false;
+$("closePanel").onclick = () => $("quickPanel").hidden = true;
+$("goEditor").onclick = () => {
+  $("quickPanel").hidden = true;
+  editor.scrollIntoView({ behavior: "smooth" });
+  editor.focus();
+};
+$("goSearch").onclick = () => {
+  $("quickPanel").hidden = true;
+  $("gameName").focus();
+};
+$("quickPanel").onclick = event => {
+  if (event.target === $("quickPanel")) {
+    $("quickPanel").hidden = true;
+  }
+};
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") $("quickPanel").hidden = true;
+});
+
+updateCounter();
+renderSaved();
+</script>
+</body>
+</html>
